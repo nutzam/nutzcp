@@ -3,10 +3,13 @@ package org.nutz.cp;
 import java.sql.Connection;
 import java.sql.SQLException;
 
+import javax.sql.DataSource;
+
 import static org.junit.Assert.*;
 
 import org.junit.Test;
 import org.nutz.ioc.impl.PropertiesProxy;
+import org.nutz.lang.Stopwatch;
 
 public class BasicTest {
 
@@ -26,6 +29,20 @@ public class BasicTest {
 			}
 		}
 		getDataSouce().getConnection();//超过限额,报异常
+	}
+	
+	@Test
+	public void test_get_get_get() throws Throwable {
+		NutDataSource ds = getDataSouce();
+		for (int i = 0; i < 10000; i++) {
+			ds.getConnection().close();
+		}
+		Stopwatch sw = Stopwatch.begin();
+		for (int i = 0; i < 100000; i++) {
+			ds.getConnection().close();
+		}
+		sw.stop();
+		System.out.println(sw);
 	}
 	
 	private static NutDataSource ds;

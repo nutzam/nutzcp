@@ -47,6 +47,10 @@ public class NutDataSource implements DataSource {
 				else {
 					boolean ok = false;
 					try {
+						if (!conn.get_conn().isClosed())
+							conn.get_conn().close();
+					} catch (Throwable e) {}
+					try {
 						conns.push(_newConnection());
 						ok = true;
 					}
