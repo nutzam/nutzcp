@@ -75,7 +75,7 @@ public class NutDataSource implements DataSource {
 		synchronized (lock) {
 			if (needInit) {
 				try {
-					Class.forName(driverClass);
+					Class.forName(driverClassName);
 				}
 				catch (ClassNotFoundException e) {
 					throw new SQLException(e);
@@ -125,7 +125,7 @@ public class NutDataSource implements DataSource {
 	protected NutJdbcConnection _newConnection() throws SQLException {
 		if (closed)
 			throw new SQLException("Datasource is closed!!!");
-		Connection _conn = DriverManager.getConnection(jdbcUrl, username, password);
+		Connection _conn = DriverManager.getConnection(url, username, password);
 		_beforePush(_conn);
 		NutJdbcConnection conn = new NutJdbcConnection(_conn, this);
 		return conn;
@@ -186,16 +186,16 @@ public class NutDataSource implements DataSource {
 	/**密码*/
 	private String password;
 	/**JDBC URL*/
-	private String jdbcUrl;
+	private String url;
 	/**数据库驱动类*/
-	private String driverClass;
+	private String driverClassName;
 	// private boolean overflow;
 	/**连接池大小*/
-	private int size = 50;
+	private int size = 10;
 	/**返回Conntion之前需要执行的SQL语句*/
 	private String validationQuery;
 	/**校验连接是否有效的超时设置,仅当validationQuery为null时有效*/
-	private int validationQueryTimeout = 5;
+	private int validationQueryTimeout = 1;
 	/**标记这个连接池是否已经关闭*/
 	private boolean closed;
 	/**默认的事务级别*/

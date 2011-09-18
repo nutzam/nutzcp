@@ -3,8 +3,6 @@ package org.nutz.cp;
 import java.sql.Connection;
 import java.sql.SQLException;
 
-import javax.sql.DataSource;
-
 import static org.junit.Assert.*;
 
 import org.junit.Test;
@@ -52,10 +50,10 @@ public class BasicTest {
 		PropertiesProxy pp = new PropertiesProxy(true);
 		pp.setPaths("nutz-test.properties");
 		ds = new NutDataSource();
-		ds.setDriverClass(pp.get("driver"));
+		ds.setDriverClassName(pp.get("driver"));
 		ds.setUsername(pp.get("username"));
 		ds.setPassword(pp.get("password"));
-		ds.setJdbcUrl(pp.get("url"));
+		ds.setUrl(pp.get("url"));
 		ds.setSize(10);
 		return ds;
 	}
