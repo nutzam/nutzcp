@@ -17,13 +17,17 @@ public class NutDataSource implements DataSource {
 
 	private LinkedList<NutJdbcConnection> conns = new LinkedList<NutJdbcConnection>();
 
+	/**全局锁*/
 	private Object lock = new Object();
 
 	private int missConn = 0;
 
-	@Setter(value = AccessLevel.PROTECTED)
+	@Setter(value = AccessLevel.PRIVATE)
 	private boolean needInit = true;
 
+	/**
+	 * 获取一个连接
+	 */
 	public Connection getConnection() throws SQLException {
 		if (needInit)
 			_init();
@@ -67,7 +71,7 @@ public class NutDataSource implements DataSource {
 		synchronized (lock) {
 			if (needInit) {
 				try {
-					Class.forName(driver);
+					Class.forName(driverClass);
 				}
 				catch (ClassNotFoundException e) {
 					throw new SQLException(e);
@@ -76,6 +80,7 @@ public class NutDataSource implements DataSource {
 				for (int i = 0; i < size; i++) {
 					conns.push(_newConnection());
 				}
+				needInit = false;
 			}
 		}
 	}
@@ -94,16 +99,16 @@ public class NutDataSource implements DataSource {
 
 	protected void _beforePush(Connection conn) throws SQLException {
 		conn.setAutoCommit(defaultAutoCommit);
-		conn.setTransactionIsolation(defaultTransaction);
+		conn.setTransactionIsolation(defaultTransactionIsolation);
 	}
 
 	protected boolean _beforeReturn(NutJdbcConnection conn) throws SQLException {
 		Connection _conn = conn.get_conn();
-		if (vaildSql == null) {
-			return _conn.isValid(5);
+		if (validationQuery == null) {
+			return _conn.isValid(validationQueryTimeout);
 		} else {
 			try {
-				_conn.createStatement().execute(vaildSql);
+				_conn.createStatement().execute(validationQuery);
 			}
 			catch (Throwable e) {
 				return false;
@@ -112,27 +117,31 @@ public class NutDataSource implements DataSource {
 		}
 	}
 
+	/**真正的从JDBC获取一个新连接*/
 	protected NutJdbcConnection _newConnection() throws SQLException {
 		if (closed)
 			throw new SQLException("Datasource is closed!!!");
-		Connection _conn = DriverManager.getConnection(jdbcUrl, user, password);
+		Connection _conn = DriverManager.getConnection(jdbcUrl, username, password);
 		_beforePush(_conn);
 		NutJdbcConnection conn = new NutJdbcConnection(_conn, this);
 		return conn;
 	}
 
+	/**关闭这个连接池*/
 	public void close() {
 		if (closed)
 			return;
 		synchronized (lock) {
+			if (closed)
+				return;
 			for (NutJdbcConnection conn : conns) {
 				try {
 					conn.get_conn().close();
 				}
 				catch (SQLException e) {}
 			}
+			closed = true;
 		}
-		closed = true;
 	}
 
 	protected void finalize() throws Throwable {
@@ -168,15 +177,26 @@ public class NutDataSource implements DataSource {
 		throw new UnsupportedOperationException();
 	}
 
-	private String user;
+	/**用户名*/
+	private String username;
+	/**密码*/
 	private String password;
+	/**JDBC URL*/
 	private String jdbcUrl;
-	private String driver;
+	/**数据库驱动类*/
+	private String driverClass;
 	// private boolean overflow;
+	/**连接池大小*/
 	private int size = 50;
-	private String vaildSql;
+	/**返回Conntion之前需要执行的SQL语句*/
+	private String validationQuery;
+	/**校验连接是否有效的超时设置,仅当validationQuery为null时有效*/
+	private int validationQueryTimeout = 5;
+	/**标记这个连接池是否已经关闭*/
 	private boolean closed;
-	private int defaultTransaction = Connection.TRANSACTION_READ_COMMITTED;
+	/**默认的事务级别*/
+	private int defaultTransactionIsolation = Connection.TRANSACTION_READ_COMMITTED;
+	/**默认的AutoCommit设置*/
 	private boolean defaultAutoCommit = false;
 
 }
