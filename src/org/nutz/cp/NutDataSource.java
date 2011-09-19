@@ -115,6 +115,11 @@ public class NutDataSource implements DataSource {
 				_conn.createStatement().execute(validationQuery);
 			}
 			catch (Throwable e) {
+				try {
+					if (!_conn.isClosed())
+						_conn.close();
+				} catch (SQLException e2) {
+				}
 				return false;
 			}
 			return true;
@@ -144,6 +149,7 @@ public class NutDataSource implements DataSource {
 				}
 				catch (SQLException e) {}
 			}
+			conns.clear();
 			closed = true;
 		}
 	}

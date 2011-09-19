@@ -1,5 +1,6 @@
 package org.nutz.cp;
 
+import java.io.Closeable;
 import java.sql.Connection;
 import java.sql.SQLException;
 
@@ -17,19 +18,13 @@ public class NutJdbcConnection implements Connection {
 		this._ds._pushConnection(this);
 	}
 	
-	@Delegate(excludes=closeAble.class)
+	@Delegate(excludes=Closeable.class)
 	@Getter
 	private Connection _conn;
 
 	private NutDataSource _ds;
-
-	private interface closeAble {
-		void close();
-	}
 	
 	protected void finalize() throws Throwable {
-		if (!_conn.isClosed())
-			_conn.close();
-		super.finalize();
+		close();
 	}
 }
