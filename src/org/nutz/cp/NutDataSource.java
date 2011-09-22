@@ -5,6 +5,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.LinkedList;
+import java.util.concurrent.locks.ReentrantLock;
 
 import javax.sql.DataSource;
 
@@ -12,13 +13,15 @@ import lombok.AccessLevel;
 import lombok.Data;
 import lombok.Setter;
 
+import org.nutz.lang.Lang;
+
 @Data
 public class NutDataSource implements DataSource {
 
 	private LinkedList<NutJdbcConnection> conns = new LinkedList<NutJdbcConnection>();
 
-	/**全局锁*/
-	private Object lock = new Object();
+	/** 全局锁 */
+	private final ReentrantLock lock = new ReentrantLock();
 
 	private int missConn = 0;
 
@@ -31,48 +34,38 @@ public class NutDataSource implements DataSource {
 	public Connection getConnection() throws SQLException {
 		if (needInit)
 			_init();
-		NutJdbcConnection conn = null;
-		synchronized (lock) {
-			if (missConn > 0) {
-				int needCreate = missConn;
-				for (int i = 0; i < needCreate; i++) {
-					conns.push(_newConnection());
-					missConn--;
-				}
+		lock.lock();
+		try {
+			NutJdbcConnection conn = null;
+			if (conns.isEmpty()) {
+				if (missConn < 1)
+					throw new SQLException("Too many connection!!");
+				conn = _newConnection();
+				missConn--;
+				return conn;
 			}
-			while (!conns.isEmpty()) {
-				conn = conns.poll();
-				if (_beforeReturn(conn))
-					return conn;
-				else {
-					boolean ok = false;
-					try {
-						if (!conn.get_conn().isClosed())
-							conn.get_conn().close();
-					} catch (Throwable e) {}
-					try {
-						conns.push(_newConnection());
-						ok = true;
-					}
-					finally {
-						if (!ok)
-							missConn++;
-					}
+			conn = conns.poll();
+			if (_beforeReturn(conn))
+				return conn;
+			else {
+				try {
+					return _newConnection();
 				}
-			}
-			if (conn == null) {
-				// if (overflow) {
-				// throw new UnsupportedOperationException("Not support yet");
-				// } else {
-				throw new SQLException("Too many connection!!");
-				// }
+				catch (Throwable e) {
+					missConn++;
+					lock.unlock();
+					throw Lang.wrapThrow(e, SQLException.class);
+				}
 			}
 		}
-		return conn;
+		finally {
+			lock.unlock();
+		}
 	}
 
 	protected void _init() throws SQLException {
-		synchronized (lock) {
+		lock.lock();
+		try {
 			if (needInit) {
 				try {
 					Class.forName(driverClassName);
@@ -87,18 +80,22 @@ public class NutDataSource implements DataSource {
 				needInit = false;
 			}
 		}
+		finally {
+			lock.unlock();
+		}
 	}
 
-	protected void _pushConnection(NutJdbcConnection _conn) throws SQLException {
-		if (conns.size() < size) {
-			synchronized (lock) {
-				if (conns.size() < size) {
-					conns.push(_conn);
-					return;
-				}
-			}
+	protected void _pushConnection(NutJdbcConnection conn) throws SQLException {
+		lock.lock();
+		try {
+			if (conns.size() < size)
+				conns.push(conn);
+			else
+				_TrueClose(conn.get_conn());
 		}
-		_conn.get_conn().close();
+		finally {
+			lock.unlock();
+		}
 	}
 
 	protected void _beforePush(Connection conn) throws SQLException {
@@ -118,39 +115,47 @@ public class NutDataSource implements DataSource {
 				try {
 					if (!_conn.isClosed())
 						_conn.close();
-				} catch (SQLException e2) {
 				}
+				catch (SQLException e2) {}
 				return false;
 			}
 			return true;
 		}
 	}
 
-	/**真正的从JDBC获取一个新连接*/
+	/** 真正的从JDBC获取一个新连接 */
 	protected NutJdbcConnection _newConnection() throws SQLException {
 		if (closed)
 			throw new SQLException("Datasource is closed!!!");
-		Connection _conn = DriverManager.getConnection(url, username, password);
-		_beforePush(_conn);
-		NutJdbcConnection conn = new NutJdbcConnection(_conn, this);
-		return conn;
+		Connection _conn = null;
+		try {
+			_conn = DriverManager.getConnection(url, username, password);
+			_beforePush(_conn);
+			NutJdbcConnection conn = new NutJdbcConnection(_conn, this);
+			return conn;
+		}
+		catch (Throwable e) {
+			_TrueClose(_conn);
+			throw Lang.wrapThrow(e, SQLException.class);
+		}
 	}
 
-	/**关闭这个连接池*/
+	/** 关闭这个连接池 */
 	public void close() {
 		if (closed)
 			return;
-		synchronized (lock) {
+		lock.lock();
+		try {
 			if (closed)
 				return;
 			for (NutJdbcConnection conn : conns) {
-				try {
-					conn.get_conn().close();
-				}
-				catch (SQLException e) {}
+				_TrueClose(conn.get_conn());
 			}
 			conns.clear();
 			closed = true;
+		}
+		finally {
+			lock.unlock();
 		}
 	}
 
@@ -187,26 +192,34 @@ public class NutDataSource implements DataSource {
 		throw new UnsupportedOperationException();
 	}
 
-	/**用户名*/
+	/** 用户名 */
 	private String username;
-	/**密码*/
+	/** 密码 */
 	private String password;
-	/**JDBC URL*/
+	/** JDBC URL */
 	private String url;
-	/**数据库驱动类*/
+	/** 数据库驱动类 */
 	private String driverClassName;
 	// private boolean overflow;
-	/**连接池大小*/
+	/** 连接池大小 */
 	private int size = 10;
-	/**返回Conntion之前需要执行的SQL语句*/
+	/** 返回Conntion之前需要执行的SQL语句 */
 	private String validationQuery;
-	/**校验连接是否有效的超时设置,仅当validationQuery为null时有效*/
+	/** 校验连接是否有效的超时设置,仅当validationQuery为null时有效 */
 	private int validationQueryTimeout = 1;
-	/**标记这个连接池是否已经关闭*/
+	/** 标记这个连接池是否已经关闭 */
 	private boolean closed;
-	/**默认的事务级别*/
+	/** 默认的事务级别 */
 	private int defaultTransactionIsolation = Connection.TRANSACTION_READ_COMMITTED;
-	/**默认的AutoCommit设置*/
+	/** 默认的AutoCommit设置 */
 	private boolean defaultAutoCommit = false;
 
+	protected static void _TrueClose(Connection _conn) {
+		try {
+			if (_conn != null)
+				if (!_conn.isClosed())
+					_conn.close();
+		}
+		catch (Throwable e) {}
+	}
 }
